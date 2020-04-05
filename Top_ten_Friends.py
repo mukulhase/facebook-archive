@@ -46,12 +46,12 @@ class FriendsIMessage(dd_list):
         self.conversations=self.get_all_conversations(messages_dir)
         self.populate_all_messages(messages_dir)
         self.create_manipulate_dataframes_plot()
-        self.visualize_data(self.daily_aggregate,"day","cumulative_daily_messages","friends_who_i_message")
-        self.dataframe_show(self.top_ten_counts,"NO._OF_MESSAGES_SENT")
-        self.visualize_data(self.daily_aggregate_i,"day","cumulative_daily_messages","friends_who_message_me")
-        self.dataframe_show(self.top_ten_i_counts,"NO._OF_MESSAGES_RECEIVED")
-        self.visualize_data(self.full_aggregate,"month","total_quarterly_messages","friends_who_i_message")
-        self.visualize_data(self.full_aggregate_i,"month","total_quarterly_messages","friends_who_message_me")
+        # self.visualize_data(self.daily_aggregate,"day","cumulative_daily_messages","friends_who_i_message")
+        # self.dataframe_show(self.top_ten_counts,"NO._OF_MESSAGES_SENT")
+        # self.visualize_data(self.daily_aggregate_i,"day","cumulative_daily_messages","friends_who_message_me")
+        # self.dataframe_show(self.top_ten_i_counts,"NO._OF_MESSAGES_RECEIVED")
+        # self.visualize_data(self.full_aggregate,"month","total_quarterly_messages","friends_who_i_message")
+        # self.visualize_data(self.full_aggregate_i,"month","total_quarterly_messages","friends_who_message_me")
         
     def get_all_conversations(self,messages_dir):
         """
@@ -143,32 +143,6 @@ class FriendsIMessage(dd_list):
             msgdf["date"] = msgdf["time"].apply(lambda convo: convo.date())
             df = df.append(msgdf[["date", "day"]].groupby("date").count().cumsum().rename(columns={"day":x}).T)
         df.reindex(sorted(df.columns), axis=1).to_csv("final.csv")
-
-        for x in self.top_ten.keys():
-            
-            msgdf = pd.DataFrame.from_dict(self.top_ten[x])
-            msgdf = msgdf[["timestamp_ms", "sender_name"]]
-            msgdf["time"] = msgdf["timestamp_ms"].apply(
-            lambda x: datetime.datetime.fromtimestamp(x/1000))
-            msgdf["day"] = msgdf["time"].apply(lambda convo: convo.day)
-            msgdf["date"] = msgdf["time"].apply(lambda convo: convo.date().replace(day=1, month=((convo.date().month-1)//3)*3 + 1))
-            self.daily_aggregate[x].append(msgdf["day"].value_counts())
-            self.full_aggregate[x].append(msgdf["date"].value_counts())
-            msgdf.groupby("date").sum().to_csv("out1.csv")
-            msgdf.pivot(index="sender_name", columns="date").to_csv("wow.csv")
-
-            
-        for x in self.top_ten_i.keys():
-            
-            msgdf_i = pd.DataFrame.from_dict(self.top_ten_i[x])
-            msgdf_i = msgdf_i[["timestamp_ms", "sender_name"]]
-            msgdf_i["time"] = msgdf_i["timestamp_ms"].apply(
-            lambda x: datetime.datetime.fromtimestamp(x/1000))
-            msgdf_i["day"] = msgdf_i["time"].apply(lambda convo: convo.day)
-            msgdf_i["date"] = msgdf_i["time"].apply(lambda convo: convo.date().replace(day=1, month=((convo.date().month-1)//3)*3 + 1))
-            self.daily_aggregate_i[x].append(msgdf_i["day"].value_counts())
-            self.full_aggregate_i[x].append(msgdf_i["date"].value_counts())
-
             
             
     def dataframe_show(self,tabular,address):
