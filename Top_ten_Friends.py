@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import argparse 
 import operator
 import re
+import glob
+from collections import Counter
 
 
 class dd_list(dict):
@@ -27,9 +29,9 @@ class FriendsIMessage(dd_list):
         self.name=name
         self.num_friends=num_friends
         self.conversations=[]
-        self.who_i_message_counts=dict()
+        self.who_i_message_counts=Counter()
         self.who_i_message=dd_list()
-        self.who_message_me_counts=dict()
+        self.who_message_me_counts=Counter()
         self.who_message_me=dd_list()
         self.top_ten=dd_list()
         self.top_ten_counts=dict()
@@ -37,16 +39,19 @@ class FriendsIMessage(dd_list):
         self.top_ten_i_counts=dict()
         self.daily_aggregate=dd_list()
         self.daily_aggregate_i=dd_list()
-        self.message_filename = "message.json"
+        self.full_aggregate = dd_list()
+        self.full_aggregate_i = dd_list()
         
     def __call__(self,messages_dir):
         self.conversations=self.get_all_conversations(messages_dir)
         self.populate_all_messages(messages_dir)
         self.create_manipulate_dataframes_plot()
-        self.visualize_data(self.daily_aggregate,"day","cumulative_daily_messages","top_ten_friends_who_i_message")
+        self.visualize_data(self.daily_aggregate,"day","cumulative_daily_messages","friends_who_i_message")
         self.dataframe_show(self.top_ten_counts,"NO._OF_MESSAGES_SENT")
-        self.visualize_data(self.daily_aggregate_i,"day","cumulative_daily_messages","top_ten_friends_who_message_me")
+        self.visualize_data(self.daily_aggregate_i,"day","cumulative_daily_messages","friends_who_message_me")
         self.dataframe_show(self.top_ten_i_counts,"NO._OF_MESSAGES_RECEIVED")
+        self.visualize_data(self.full_aggregate,"month","total_quarterly_messages","friends_who_i_message")
+        self.visualize_data(self.full_aggregate_i,"month","total_quarterly_messages","friends_who_message_me")
         
     def get_all_conversations(self,messages_dir):
         """
@@ -60,7 +65,6 @@ class FriendsIMessage(dd_list):
             files=[x for x in os.listdir(messages_dir+"/"+d) if os.path.isfile(messages_dir+"/"+d+"/"+x)==True]
             try:
                 if re.search(r'message(_\d+)?\.json', files[0]):
-                    self.message_filename = files[0]
                     conversations.append(d)
             except:
                 pass
@@ -73,45 +77,32 @@ class FriendsIMessage(dd_list):
            messages friendwise.
         """
         for convo in self.conversations:
-            f=messages_dir+"/"+convo+"/"+self.message_filename
-            with open(f) as msg_json_f:
-                msg_json=json.load(msg_json_f)
-                count=0
-                count_i=0
-                #checks for a friend and not a group
-                if len(msg_json["participants"])==2:
-                    for msg in msg_json["messages"]:
-                        values=[]
-                        values=[x for x in msg.values()]
-                        if values[0]==self.name:#count has the total no. of messages i have messaged to a particular friend
-                            count=count+1 
-                            for x in msg_json["participants"]:
-                                title=[y for y in x.values()]
-                                self.who_i_message[title[0]].append(msg)
-                                
-                        else:#count_i has the total no. of messages who had messaged me
-                            count_i=count_i+1
-                            for x in msg_json["participants"]:
-                                title_i=[y for y in x.values()]
-                                self.who_message_me[title_i[0]].append(msg)
-                                
-                        
+            jsons = glob.glob(messages_dir+"/"+convo+"/message*.json")
+            for f in jsons:
+                with open(f) as msg_json_f:
+
+                    msg_json=json.load(msg_json_f)
+                    count=0
+                    count_i=0
+                    #checks for a friend and not a group
+                    if len(msg_json["participants"])==2:
+                        for msg in msg_json["messages"]:
+                            if msg['sender_name']==self.name:#count has the total no. of messages i have messaged to a particular friend
+                                count=count+1 
+                                for x in msg_json["participants"]:
+                                    if(x["name"]!=self.name):
+                                        self.who_i_message[x["name"]].append(msg)   
+                            else:#count_i has the total no. of messages who had messaged me
+                                count_i=count_i+1
+                                self.who_message_me[msg['sender_name']].append(msg)
                                     
-                                    
-                    for x in msg_json["participants"]:
-                        title1=[y for y in x.values()]
-                        self.who_i_message_counts[title1[0]]=count
-                        self.who_message_me_counts[title1[0]]=count_i
-        
-                                
-                                    
-        
+        self.who_i_message_counts = dict((x[0], len(x[1]))for x in self.who_i_message.items())
+        self.who_message_me_counts = dict((x[0], len(x[1]))for x in self.who_message_me.items())
         sv=sorted(self.who_i_message_counts.items(),key=operator.itemgetter(1),reverse=True)#finds the top ten friends
         sv_i=sorted(self.who_message_me_counts.items(),key=operator.itemgetter(1),reverse=True)
         flag=0
         flag_i=0
         for x,y in sv:
-            
             if flag==self.num_friends:
                 break
             else:
@@ -139,6 +130,20 @@ class FriendsIMessage(dd_list):
             to the dataframe and store the appropriate aggregation in the
             variables and plot each friends messages as a function of time(days) 
         """
+        df = pd.DataFrame()
+
+        for x in self.top_ten.keys():
+            msgdf = pd.DataFrame.from_dict(self.top_ten[x])
+            msgdf_i = pd.DataFrame.from_dict(self.top_ten_i[x])
+            msgdf = msgdf.append(msgdf_i)
+            msgdf = msgdf[["timestamp_ms", "sender_name"]]
+            msgdf["time"] = msgdf["timestamp_ms"].apply(
+            lambda x: datetime.datetime.fromtimestamp(x/1000))
+            msgdf["day"] = msgdf["time"].apply(lambda convo: convo.day)
+            msgdf["date"] = msgdf["time"].apply(lambda convo: convo.date())
+            df = df.append(msgdf[["date", "day"]].groupby("date").count().cumsum().rename(columns={"day":x}).T)
+        df.reindex(sorted(df.columns), axis=1).to_csv("final.csv")
+
         for x in self.top_ten.keys():
             
             msgdf = pd.DataFrame.from_dict(self.top_ten[x])
@@ -146,8 +151,12 @@ class FriendsIMessage(dd_list):
             msgdf["time"] = msgdf["timestamp_ms"].apply(
             lambda x: datetime.datetime.fromtimestamp(x/1000))
             msgdf["day"] = msgdf["time"].apply(lambda convo: convo.day)
-            
+            msgdf["date"] = msgdf["time"].apply(lambda convo: convo.date().replace(day=1, month=((convo.date().month-1)//3)*3 + 1))
             self.daily_aggregate[x].append(msgdf["day"].value_counts())
+            self.full_aggregate[x].append(msgdf["date"].value_counts())
+            msgdf.groupby("date").sum().to_csv("out1.csv")
+            msgdf.pivot(index="sender_name", columns="date").to_csv("wow.csv")
+
             
         for x in self.top_ten_i.keys():
             
@@ -156,8 +165,10 @@ class FriendsIMessage(dd_list):
             msgdf_i["time"] = msgdf_i["timestamp_ms"].apply(
             lambda x: datetime.datetime.fromtimestamp(x/1000))
             msgdf_i["day"] = msgdf_i["time"].apply(lambda convo: convo.day)
-            
+            msgdf_i["date"] = msgdf_i["time"].apply(lambda convo: convo.date().replace(day=1, month=((convo.date().month-1)//3)*3 + 1))
             self.daily_aggregate_i[x].append(msgdf_i["day"].value_counts())
+            self.full_aggregate_i[x].append(msgdf_i["date"].value_counts())
+
             
             
     def dataframe_show(self,tabular,address):
